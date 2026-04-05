@@ -50,7 +50,7 @@ Balas HANYA JSON (no backticks):
   "tips": "tips singkat dalam bahasa Indonesia cara optimal pakai prompt ini di Sora/Runway/Kling"
 }`
 
-export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, user }) {
+export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, user, saveHistoryToSupabase }) {
   const sessionRef    = useRef({ goal: '', role: null, answers: {}, step: 0 })
   const phaseRef      = useRef('welcome')
   const lastPromptRef = useRef('')
@@ -98,19 +98,18 @@ export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
     const inner = chatInnerRef.current; if (!inner) return
     inner.innerHTML = `
       <div class="welcome-block">
-        <div class="welcome-glyph">🎬</div>
         <div class="welcome-q">Mau bikin prompt video apa hari ini?</div>
         <div class="welcome-hook">
           <span class="hook-stat">Video AI butuh prompt yang sangat spesifik.</span>
           Gw bantu lu bikin prompt yang <strong>detail & siap pakai</strong> di Sora, Runway Gen-3, Kling AI, dan Pika Labs.
         </div>
         <div class="quick-pills">
-          <button class="quick-pill" data-role="cinematic">🎬 Cinematic</button>
-          <button class="quick-pill" data-role="anime_vid">🌸 Anime / Animated</button>
-          <button class="quick-pill" data-role="music_vid">🎵 Music Video</button>
-          <button class="quick-pill" data-role="nature_vid">🏔️ Nature / Timelapse</button>
-          <button class="quick-pill" data-role="abstract">🌀 Abstract / Motion</button>
-          <button class="quick-pill" data-role="custom_vid">✦ Custom / Bebas</button>
+          <button class="quick-pill" data-role="cinematic">Cinematic</button>
+          <button class="quick-pill" data-role="anime_vid">Anime / Animated</button>
+          <button class="quick-pill" data-role="music_vid">Music Video</button>
+          <button class="quick-pill" data-role="nature_vid">Nature / Timelapse</button>
+          <button class="quick-pill" data-role="abstract">Abstract / Motion</button>
+          <button class="quick-pill" data-role="custom_vid">Custom / Bebas</button>
         </div>
       </div>`
 
@@ -119,7 +118,7 @@ export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
         const role = VIDEO_ROLES.find(r => r.id === btn.dataset.role)
         if (!role) return
         sessionRef.current.role = role
-        appendMsg('user', `${role.icon} ${role.label}`)
+        appendMsg('user', role.label)
         renderQuestion(0)
       })
     })
@@ -146,14 +145,21 @@ export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
 
       let optHtml = ''
       if (options) {
-        optHtml = options.map((opt, i) =>
-          `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
+        optHtml = options.map((opt, i) => {
+          const parts = opt.label.split(' \u2014 ')
+          let title = parts[0] || opt.label
+          title = title.replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim()
+          const sub   = parts[1] || ''
+          return `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
             <span class="sug-num">0${i + 1}</span>
-            <span class="sug-text">${opt.label}</span>
+            <span class="sug-text">
+              <span class="sug-title">${title}</span>
+              ${sub ? `<span class="sug-sub">${sub}</span>` : ''}
+            </span>
           </button>`
-        ).join('')
+        }).join('')
         optHtml += `<button class="sug-card else-card qa-btn" data-val="__else__" data-step="${stepIdx}">
-          <span class="sug-num">✎</span>
+          <span class="sug-num">?</span>
           <span class="sug-text">Tulis sendiri...</span>
         </button>`
       }
@@ -196,7 +202,7 @@ export function useVideoChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
     const s = sessionRef.current
 
     await showTyping(500); removeTyping()
-    appendMsg('bot', `Style <strong>${s.role?.icon} ${s.role?.label}</strong> terpilih! Gw lagi nge-reasoning video prompt terbaik pakai Llama 3.3... 🎬`)
+    appendMsg('bot', `Style <strong>${s.role?.label}</strong> terpilih! Gw lagi nge-reasoning video prompt terbaik pakai Llama 3.3...`)
     await showTyping(1400); removeTyping()
 
     const answersCtx = Object.entries(s.answers).map(([k, v]) => `${k}: ${v}`).join('\n')
@@ -236,58 +242,45 @@ ${answersCtx}`.trim()
     setConvHistory(prev => [item, ...prev.slice(0, 19)])
     setActiveConvId(id)
 
-    // Save to Supabase if logged in
-    if (user) {
-      supabase.from('prompt_history').insert({
-        user_id: user.id,
-        mode: 'video',
-        label: item.label,
-        prompt: item.prompt,
-        icon: item.icon
-      }).then(({ error }) => {
-        if (error) console.error('Error saving to Supabase:', error)
-      })
+    if (user && saveHistoryToSupabase) {
+      saveHistoryToSupabase(item)
     }
 
     const div = document.createElement('div')
     div.className = 'msg bot'
     div.innerHTML = `
-      <div class="bubble">✦ Done! Video prompt siap — tinggal copas ke Sora, Runway, Kling, atau Pika:</div>
+      <div class="bubble">Done! Video prompt siap — tinggal copas ke Sora, Runway, Kling, atau Pika:</div>
 
       <div class="prompt-result">
-        <div class="pr-label">🎬 VIDEO PROMPT — SIAP COPAS</div>
+        <div class="pr-label">VIDEO PROMPT — SIAP COPAS</div>
         <button class="pr-copy" id="copy-main">Copy ⌘</button>
         <div class="pr-text">${result.main_prompt}</div>
       </div>
 
       ${result.negative_prompt ? `
         <div class="prompt-result neg-prompt">
-          <div class="pr-label">🚫 NEGATIVE PROMPT</div>
+          <div class="pr-label">NEGATIF PROMPT</div>
           <button class="pr-copy" id="copy-neg">Copy ⌘</button>
           <div class="pr-text" style="color:var(--text-3);font-size:12px">${result.negative_prompt}</div>
         </div>` : ''}
 
       ${result.tips ? `
         <div class="img-tips">
-          <span class="tips-icon">💡</span>
           <span>${result.tips}</span>
         </div>` : ''}
 
       <div class="variant-section">
-        <div class="variant-label">🎲 Mau variasi?</div>
+        <div class="variant-label">Mau variasi?</div>
         <div class="variant-cards">
           <button class="variant-card" id="var-enhance">
-            <span class="vc-icon">✨</span>
             <div class="vc-body"><div class="vc-title">Lebih Sinematik & Detail</div><div class="vc-desc">Tambah camera movement, lighting lebih dramatis</div></div>
             <span class="vc-arrow">→</span>
           </button>
           <button class="variant-card" id="var-short">
-            <span class="vc-icon">⚡</span>
             <div class="vc-body"><div class="vc-title">Versi Pendek & Padat</div><div class="vc-desc">Untuk clip 5-15 detik, esensial saja</div></div>
             <span class="vc-arrow">→</span>
           </button>
           <button class="variant-card" id="var-different">
-            <span class="vc-icon">🔄</span>
             <div class="vc-body"><div class="vc-title">Angle / Mood Berbeda</div><div class="vc-desc">Interpretasi kreatif yang unexpected</div></div>
             <span class="vc-arrow">→</span>
           </button>
@@ -295,8 +288,8 @@ ${answersCtx}`.trim()
       </div>
 
       <div class="yn-row">
-        <button class="yn-btn yes" id="vid-new">🎬 Prompt baru</button>
-        <button class="yn-btn" id="vid-refine">✎ Refine ini</button>
+        <button class="yn-btn yes" id="vid-new">Prompt baru</button>
+        <button class="yn-btn" id="vid-refine">Refine ini</button>
       </div>`
 
     div.querySelector('#copy-main')?.addEventListener('click', () =>
@@ -322,8 +315,8 @@ ${answersCtx}`.trim()
   const generateVariant = useCallback(async (type) => {
     phaseRef.current = 'generating'
     await showTyping(500); removeTyping()
-    const labels = { enhance: '✨ Lebih Sinematik', short: '⚡ Versi Pendek', different: '🔄 Angle Berbeda' }
-    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>... 🎬`)
+    const labels = { enhance: 'Lebih Sinematik', short: 'Versi Pendek', different: 'Angle Berbeda' }
+    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>...`)
     await showTyping(1200); removeTyping()
 
     const base = lastPromptRef.current
@@ -356,8 +349,8 @@ ${answersCtx}`.trim()
             <div class="pr-text" style="color:var(--text-3);font-size:12px">${result.negative_prompt}</div>
           </div>` : ''}
         <div class="yn-row" style="margin-top:10px">
-          <button class="yn-btn yes" id="vn">🎬 Prompt baru</button>
-          <button class="yn-btn" id="vr">✎ Refine ini</button>
+          <button class="yn-btn yes" id="vn">Prompt baru</button>
+          <button class="yn-btn" id="vr">Refine ini</button>
         </div>`
       div.querySelector('#vc')?.addEventListener('click', () => navigator.clipboard.writeText(vp).then(() => showToast('✓ Di-copy!')))
       div.querySelector('#vnc')?.addEventListener('click', () => navigator.clipboard.writeText(result?.negative_prompt || '').then(() => showToast('✓ Di-copy!')))
@@ -396,7 +389,7 @@ ${answersCtx}`.trim()
           const result = parseJSON(raw)
           const role = VIDEO_ROLES.find(r => r.id === result?.role_id) || VIDEO_ROLES[5]
           sessionRef.current.role = role
-          appendMsg('bot', `Style yang cocok: <strong>${role.icon} ${role.label}</strong> ✦`)
+          appendMsg('bot', `Style yang cocok: <strong>${role.label}</strong>`)
           renderQuestion(0)
         } catch {
           sessionRef.current.role = VIDEO_ROLES[5]
@@ -440,7 +433,7 @@ ${answersCtx}`.trim()
     setActiveConvId(item.id)
     lastPromptRef.current = item.prompt || ''
     setTimeout(() => {
-      appendMsg('bot', `📂 Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
+      appendMsg('bot', `Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
       const div = document.createElement('div')
       div.className = 'msg bot'
       div.innerHTML = `
@@ -450,8 +443,8 @@ ${answersCtx}`.trim()
           <div class="pr-text">${item.prompt || '-'}</div>
         </div>
         <div class="yn-row">
-          <button class="yn-btn yes" id="hn">🎬 Prompt baru</button>
-          <button class="yn-btn" id="hr">✎ Refine ini</button>
+          <button class="yn-btn yes" id="hn">Prompt baru</button>
+          <button class="yn-btn" id="hr">Refine ini</button>
         </div>`
       div.querySelector('#hc')?.addEventListener('click', () => navigator.clipboard.writeText(item.prompt || '').then(() => showToast('✓ Di-copy!')))
       div.querySelector('#hn')?.addEventListener('click', () => renderWelcome())

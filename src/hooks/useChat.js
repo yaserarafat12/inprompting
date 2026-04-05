@@ -24,7 +24,7 @@ function parseJSON(raw) {
   catch { return null }
 }
 
-export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, mode = 'text', user }) {
+export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, mode = 'text', user, saveHistoryToSupabase }) {
   const sessionRef    = useRef({ goal: '', role: null, answers: {}, step: 0 })
   const phaseRef      = useRef('welcome')
   const lastPromptRef = useRef('')
@@ -74,7 +74,6 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
     
     inner.innerHTML = `
       <div class="welcome-block">
-        <div class="welcome-glyph">✦</div>
         <div class="welcome-q">Mau bikin prompt ${isImg ? 'gambar' : 'chat'} apa hari ini?</div>
         <div class="welcome-hook">
           <span class="hook-stat">Prompt yang buruk = output yang mengecewakan.</span>
@@ -112,12 +111,11 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
 
     const cardsHtml = activeRoles.map(r => `
       <button class="role-card${suggestedId === r.id ? ' suggested' : ''}" data-role="${r.id}">
-        <span class="role-icon">${r.icon}</span>
         <div class="role-body">
           <div class="role-name">${r.label}</div>
           <div class="role-desc">${r.desc}</div>
         </div>
-        ${suggestedId === r.id ? '<span class="role-badge">Disarankan ✦</span>' : ''}
+        ${suggestedId === r.id ? '<span class="role-badge">Disarankan</span>' : ''}
       </button>`).join('')
 
     const msgDiv = document.createElement('div')
@@ -133,7 +131,7 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
         btn.style.opacity = '1'; btn.style.borderColor = 'var(--accent)'; btn.style.background = 'var(--accent-dim)'
         const role = activeRoles.find(r => r.id === btn.dataset.role)
         sessionRef.current.role = role
-        appendMsg('user', `${role.icon} ${role.label}`)
+        appendMsg('user', role.label)
         renderQuestion(0)
       })
     })
@@ -164,14 +162,21 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
 
       let optHtml = ''
       if (options) {
-        optHtml = options.map((opt, i) =>
-          `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
+        optHtml = options.map((opt, i) => {
+          const parts = opt.label.split(' \u2014 ')
+          let title = parts[0] || opt.label
+          title = title.replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim()
+          const sub   = parts[1] || ''
+          return `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
             <span class="sug-num">0${i + 1}</span>
-            <span class="sug-text">${opt.label}</span>
+            <span class="sug-text">
+              <span class="sug-title">${title}</span>
+              ${sub ? `<span class="sug-sub">${sub}</span>` : ''}
+            </span>
           </button>`
-        ).join('')
+        }).join('')
         optHtml += `<button class="sug-card else-card qa-btn" data-val="__else__" data-step="${stepIdx}">
-          <span class="sug-num">✎</span><span class="sug-text">Tulis sendiri...</span>
+          <span class="sug-num">?</span><span class="sug-text">Tulis sendiri...</span>
         </button>`
       }
 
@@ -213,7 +218,7 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
     const s = sessionRef.current
     await showTyping(500); removeTyping()
     const formulaStr = s.role?.formula ? `formula <strong>${s.role?.formula}</strong>` : `pendekatan <strong>Detailing</strong>`;
-    appendMsg('bot', `Semua info lengkap! Reasoning dengan ${formulaStr} via Llama 3.3... ✦`)
+    appendMsg('bot', `Semua info lengkap! Reasoning dengan ${formulaStr} via Llama 3.3...`)
     await showTyping(1300); removeTyping()
 
     const activeRoles = mode === 'image' ? IMAGE_ROLES : ROLES
@@ -247,39 +252,30 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
     setConvHistory(prev => [item, ...prev.slice(0, 19)])
     setActiveConvId(id)
 
-    // Save to Supabase if logged in
-    if (user) {
-      supabase.from('prompt_history').insert({
-        user_id: user.id,
-        mode: 'text',
-        label: item.label,
-        prompt: item.prompt,
-        icon: item.icon
-      }).then(({ error }) => {
-        if (error) console.error('Error saving to Supabase:', error)
-      })
+    if (user && saveHistoryToSupabase) {
+      saveHistoryToSupabase(item)
     }
 
     const div = document.createElement('div')
     div.className = 'msg bot'
     div.innerHTML = `
-      <div class="bubble">✦ Done! Prompt siap — copas ke AI manapun:</div>
+      <div class="bubble">Done! Prompt siap — copas ke AI manapun:</div>
       <div class="prompt-result">
-        <div class="pr-label">✦ PROMPT SIAP PAKAI</div>
+        <div class="pr-label">PROMPT SIAP PAKAI</div>
         <button class="pr-copy">Copy ⌘</button>
         <div class="pr-text">${prompt}</div>
       </div>
       <div class="variant-section">
-        <div class="variant-label">🎲 Mau versi berbeda?</div>
+        <div class="variant-label">Mau versi berbeda?</div>
         <div class="variant-cards">
-          <button class="variant-card" data-type="short"><span class="vc-icon">⚡</span><div class="vc-body"><div class="vc-title">Singkat & Tajam</div><div class="vc-desc">Max 60 kata, to the point</div></div><span class="vc-arrow">→</span></button>
-          <button class="variant-card" data-type="detailed"><span class="vc-icon">🔬</span><div class="vc-body"><div class="vc-title">Super Detail</div><div class="vc-desc">Step-by-step, anti-pattern, standar kualitas</div></div><span class="vc-arrow">→</span></button>
-          <button class="variant-card" data-type="creative"><span class="vc-icon">🎨</span><div class="vc-body"><div class="vc-title">Kreatif & Eksploratif</div><div class="vc-desc">Angle tidak terduga, push the boundaries</div></div><span class="vc-arrow">→</span></button>
+          <button class="variant-card" data-type="short"><div class="vc-body"><div class="vc-title">Singkat & Tajam</div><div class="vc-desc">Max 60 kata, to the point</div></div><span class="vc-arrow">→</span></button>
+          <button class="variant-card" data-type="detailed"><div class="vc-body"><div class="vc-title">Super Detail</div><div class="vc-desc">Step-by-step, anti-pattern, standar kualitas</div></div><span class="vc-arrow">→</span></button>
+          <button class="variant-card" data-type="creative"><div class="vc-body"><div class="vc-title">Kreatif & Eksploratif</div><div class="vc-desc">Angle tidak terduga, push the boundaries</div></div><span class="vc-arrow">→</span></button>
         </div>
       </div>
       <div class="yn-row">
-        <button class="yn-btn yes" id="r-new">✦ Prompt baru</button>
-        <button class="yn-btn" id="r-refine">✎ Refine ini</button>
+        <button class="yn-btn yes" id="r-new">Prompt baru</button>
+        <button class="yn-btn" id="r-refine">Refine ini</button>
       </div>`
 
     div.querySelector('.pr-copy')?.addEventListener('click', () =>
@@ -301,8 +297,8 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
   const generateVariant = useCallback(async (type) => {
     phaseRef.current = 'generating'
     await showTyping(500); removeTyping()
-    const labels = { short: '⚡ Singkat', detailed: '🔬 Super Detail', creative: '🎨 Kreatif' }
-    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>... ✦`)
+    const labels = { short: 'Singkat', detailed: 'Super Detail', creative: 'Kreatif' }
+    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>...`)
     await showTyping(1200); removeTyping()
 
     const base = lastPromptRef.current
@@ -322,19 +318,19 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
 
   const renderVariantResult = useCallback((prompt, type) => {
     const inner = chatInnerRef.current; if (!inner) return
-    const labels = { short: '⚡ Versi Singkat', detailed: '🔬 Versi Super Detail', creative: '🎨 Versi Kreatif' }
+    const labels = { short: 'Versi Singkat', detailed: 'Versi Super Detail', creative: 'Versi Kreatif' }
     const div = document.createElement('div')
     div.className = 'msg bot'
     div.innerHTML = `
-      <div class="bubble">✦ Ini <strong>${labels[type]}</strong>:</div>
+      <div class="bubble">Ini <strong>${labels[type]}</strong>:</div>
       <div class="prompt-result">
         <div class="pr-label">${labels[type]}</div>
         <button class="pr-copy">Copy ⌘</button>
         <div class="pr-text">${prompt}</div>
       </div>
       <div class="yn-row">
-        <button class="yn-btn yes" id="vr-new">✦ Prompt baru</button>
-        <button class="yn-btn" id="vr-refine">✎ Refine ini</button>
+        <button class="yn-btn yes" id="vr-new">Prompt baru</button>
+        <button class="yn-btn" id="vr-refine">Refine ini</button>
       </div>`
     div.querySelector('.pr-copy')?.addEventListener('click', () =>
       navigator.clipboard.writeText(prompt).then(() => showToast('✓ Di-copy!'))
@@ -362,7 +358,7 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
       sessionRef.current.goal = text
       phaseRef.current = 'classifying'
       await showTyping(400); removeTyping()
-      appendMsg('bot', 'Gw analisis tujuan lu... ✦')
+      appendMsg('bot', 'Gw analisis tujuan lu...')
       await showTyping(900); removeTyping()
       
       const activeRoles = mode === 'image' ? IMAGE_ROLES : ROLES
@@ -372,7 +368,7 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
       if (classified?.role_id && classified.confidence !== 'low') {
         if (classified.pre_answers) Object.assign(sessionRef.current.answers, classified.pre_answers)
         const found = activeRoles.find(r => r.id === classified.role_id)
-        if (found) appendMsg('bot', `${classified.reasoning || ''} Gw saranin role/style <strong>${found.icon} ${found.label}</strong>.`)
+        if (found) appendMsg('bot', `${classified.reasoning || ''} Gw saranin role/style <strong>${found.label}</strong>.`)
         renderRoleSelector(classified.role_id)
       } else {
         renderRoleSelector(null)
@@ -421,18 +417,18 @@ export function useChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConv
     setActiveConvId(item.id)
     lastPromptRef.current = item.prompt || ''
     setTimeout(() => {
-      appendMsg('bot', `📂 Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
+      appendMsg('bot', `Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
       const div = document.createElement('div')
       div.className = 'msg bot'
       div.innerHTML = `
         <div class="prompt-result">
-          <div class="pr-label">✦ PROMPT TERSIMPAN</div>
+          <div class="pr-label">PROMPT TERSIMPAN</div>
           <button class="pr-copy">Copy ⌘</button>
           <div class="pr-text">${item.prompt || '-'}</div>
         </div>
         <div class="yn-row">
-          <button class="yn-btn yes" id="hl-new">✦ Prompt baru</button>
-          <button class="yn-btn" id="hl-refine">✎ Refine ini</button>
+          <button class="yn-btn yes" id="hl-new">Prompt baru</button>
+          <button class="yn-btn" id="hl-refine">Refine ini</button>
         </div>`
       div.querySelector('.pr-copy')?.addEventListener('click', () =>
         navigator.clipboard.writeText(item.prompt || '').then(() => showToast('✓ Di-copy!'))

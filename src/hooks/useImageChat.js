@@ -43,7 +43,7 @@ Balas HANYA JSON (no backticks, no preamble):
   "tips": "1-2 tips singkat dalam bahasa Indonesia cara optimal pakai prompt ini"
 }`
 
-export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, user }) {
+export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, setConvHistory, setActiveConvId, user, saveHistoryToSupabase }) {
   const sessionRef    = useRef({ goal: '', role: null, answers: {}, step: 0 })
   const phaseRef      = useRef('welcome')
   const lastPromptRef = useRef('')
@@ -91,19 +91,18 @@ export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
     const inner = chatInnerRef.current; if (!inner) return
     inner.innerHTML = `
       <div class="welcome-block">
-        <div class="welcome-glyph">🎨</div>
         <div class="welcome-q">Mau bikin prompt gambar apa hari ini?</div>
         <div class="welcome-hook">
           <span class="hook-stat">Prompt gambar yang buruk = hasil yang jauh dari ekspektasi.</span>
           Gw bantu lu bikin prompt yang <strong>detail, terstruktur, dan siap pakai</strong> di Midjourney, DALL-E, atau Stable Diffusion.
         </div>
         <div class="quick-pills">
-          <button class="quick-pill" data-role="anime">🌸 Anime</button>
-          <button class="quick-pill" data-role="realistic">📷 Realistic</button>
-          <button class="quick-pill" data-role="threed">🎮 3D Art Style</button>
-          <button class="quick-pill" data-role="pemandangan">🏔️ Pemandangan</button>
-          <button class="quick-pill" data-role="kartun">🎠 Kartun</button>
-          <button class="quick-pill" data-role="custom">✦ Custom Style</button>
+          <button class="quick-pill" data-role="anime">Anime</button>
+          <button class="quick-pill" data-role="realistic">Realistic</button>
+          <button class="quick-pill" data-role="threed">3D Art Style</button>
+          <button class="quick-pill" data-role="pemandangan">Pemandangan</button>
+          <button class="quick-pill" data-role="kartun">Kartun</button>
+          <button class="quick-pill" data-role="custom">Custom Style</button>
         </div>
       </div>`
 
@@ -112,7 +111,7 @@ export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
         const role = IMAGE_ROLES.find(r => r.id === btn.dataset.role)
         if (!role) return
         sessionRef.current.role = role
-        appendMsg('user', `${role.icon} ${role.label}`)
+        appendMsg('user', role.label)
         renderQuestion(0)
       })
     })
@@ -139,14 +138,21 @@ export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
 
       let optHtml = ''
       if (options) {
-        optHtml = options.map((opt, i) =>
-          `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
+        optHtml = options.map((opt, i) => {
+          const parts = opt.label.split(' \u2014 ')
+          let title = parts[0] || opt.label
+          title = title.replace(/[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim()
+          const sub   = parts[1] || ''
+          return `<button class="sug-card qa-btn" data-val="${opt.value}" data-step="${stepIdx}">
             <span class="sug-num">0${i + 1}</span>
-            <span class="sug-text">${opt.label}</span>
+            <span class="sug-text">
+              <span class="sug-title">${title}</span>
+              ${sub ? `<span class="sug-sub">${sub}</span>` : ''}
+            </span>
           </button>`
-        ).join('')
+        }).join('')
         optHtml += `<button class="sug-card else-card qa-btn" data-val="__else__" data-step="${stepIdx}">
-          <span class="sug-num">✎</span>
+          <span class="sug-num">?</span>
           <span class="sug-text">Tulis sendiri...</span>
         </button>`
       }
@@ -189,7 +195,7 @@ export function useImageChat({ chatInnerRef, chatAreaRef, inputRef, toastRef, se
     const s = sessionRef.current
 
     await showTyping(500); removeTyping()
-    appendMsg('bot', `Style <strong>${s.role?.icon} ${s.role?.label}</strong> terpilih! Gw lagi nge-reasoning prompt image terbaik pakai Llama 3.3... 🎨`)
+    appendMsg('bot', `Style <strong>${s.role?.label}</strong> terpilih! Gw lagi nge-reasoning prompt image terbaik pakai Llama 3.3...`)
     await showTyping(1400); removeTyping()
 
     const answersCtx = Object.entries(s.answers)
@@ -240,59 +246,45 @@ ${answersCtx}
     setConvHistory(prev => [item, ...prev.slice(0, 19)])
     setActiveConvId(id)
 
-    // Save to Supabase if logged in
-    if (user) {
-      supabase.from('prompt_history').insert({
-        user_id: user.id,
-        mode: 'image',
-        label: item.label,
-        prompt: item.prompt,
-        negative_prompt: result.negative_prompt,
-        icon: item.icon
-      }).then(({ error }) => {
-        if (error) console.error('Error saving to Supabase:', error)
-      })
+    if (user && saveHistoryToSupabase) {
+      saveHistoryToSupabase(item)
     }
 
     const div = document.createElement('div')
     div.className = 'msg bot'
     div.innerHTML = `
-      <div class="bubble">✦ Done! Prompt image siap — tinggal copas ke Midjourney, DALL-E, atau SD:</div>
+      <div class="bubble">Done! Prompt image siap — tinggal copas ke Midjourney, DALL-E, atau SD:</div>
 
       <div class="prompt-result">
-        <div class="pr-label">🎨 IMAGE PROMPT — SIAP COPAS</div>
+        <div class="pr-label">IMAGE PROMPT — SIAP COPAS</div>
         <button class="pr-copy" id="copy-main">Copy ⌘</button>
         <div class="pr-text">${result.main_prompt}</div>
       </div>
 
       ${result.negative_prompt ? `
         <div class="prompt-result neg-prompt">
-          <div class="pr-label">🚫 NEGATIVE PROMPT</div>
+          <div class="pr-label">NEGATIF PROMPT</div>
           <button class="pr-copy" id="copy-neg">Copy ⌘</button>
           <div class="pr-text" style="color:var(--text-3);font-size:12px">${result.negative_prompt}</div>
         </div>` : ''}
 
       ${result.tips ? `
         <div class="img-tips">
-          <span class="tips-icon">💡</span>
           <span>${result.tips}</span>
         </div>` : ''}
 
       <div class="variant-section">
-        <div class="variant-label">🎲 Mau variasi?</div>
+        <div class="variant-label">Mau variasi?</div>
         <div class="variant-cards">
           <button class="variant-card" id="var-enhance">
-            <span class="vc-icon">✨</span>
             <div class="vc-body"><div class="vc-title">Lebih Detail & Epic</div><div class="vc-desc">Tambah visual keywords, lighting lebih dramatis</div></div>
             <span class="vc-arrow">→</span>
           </button>
           <button class="variant-card" id="var-minimal">
-            <span class="vc-icon">🎯</span>
             <div class="vc-body"><div class="vc-title">Versi Minimalis</div><div class="vc-desc">Esensial saja, max 30 kata tapi tetap punch</div></div>
             <span class="vc-arrow">→</span>
           </button>
           <button class="variant-card" id="var-different">
-            <span class="vc-icon">🔄</span>
             <div class="vc-body"><div class="vc-title">Angle / Mood Berbeda</div><div class="vc-desc">Interpretasi yang unexpected tapi relevan</div></div>
             <span class="vc-arrow">→</span>
           </button>
@@ -300,8 +292,8 @@ ${answersCtx}
       </div>
 
       <div class="yn-row">
-        <button class="yn-btn yes" id="img-new">🎨 Prompt baru</button>
-        <button class="yn-btn" id="img-refine">✎ Refine ini</button>
+        <button class="yn-btn yes" id="img-new">Prompt baru</button>
+        <button class="yn-btn" id="img-refine">Refine ini</button>
       </div>`
 
     div.querySelector('#copy-main')?.addEventListener('click', () =>
@@ -328,8 +320,8 @@ ${answersCtx}
     phaseRef.current = 'generating'
     await showTyping(500); removeTyping()
 
-    const labels = { enhance: '✨ Lebih Detail & Epic', minimal: '🎯 Versi Minimalis', different: '🔄 Angle Berbeda' }
-    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>... 🎨`)
+    const labels = { enhance: 'Lebih Detail & Epic', minimal: 'Versi Minimalis', different: 'Angle Berbeda' }
+    appendMsg('bot', `Generating variasi <strong>${labels[type]}</strong>...`)
     await showTyping(1200); removeTyping()
 
     const base = lastPromptRef.current
@@ -362,8 +354,8 @@ ${answersCtx}
             <div class="pr-text" style="color:var(--text-3);font-size:12px">${result.negative_prompt}</div>
           </div>` : ''}
         <div class="yn-row" style="margin-top:10px">
-          <button class="yn-btn yes" id="vn">🎨 Prompt baru</button>
-          <button class="yn-btn" id="vr">✎ Refine ini</button>
+          <button class="yn-btn yes" id="vn">Prompt baru</button>
+          <button class="yn-btn" id="vr">Refine ini</button>
         </div>`
       div.querySelector('#vc')?.addEventListener('click', () => navigator.clipboard.writeText(vp).then(() => showToast('✓ Di-copy!')))
       div.querySelector('#vnc')?.addEventListener('click', () => navigator.clipboard.writeText(result?.negative_prompt || '').then(() => showToast('✓ Di-copy!')))
@@ -404,7 +396,7 @@ ${answersCtx}
           const result = parseJSON(raw)
           const role = IMAGE_ROLES.find(r => r.id === result?.role_id) || IMAGE_ROLES[5]
           sessionRef.current.role = role
-          appendMsg('bot', `Style yang cocok: <strong>${role.icon} ${role.label}</strong>. Gw tanya beberapa hal dulu ya ✦`)
+          appendMsg('bot', `Style yang cocok: <strong>${role.label}</strong>. Gw tanya beberapa hal dulu ya`)
           renderQuestion(0)
         } catch {
           sessionRef.current.role = IMAGE_ROLES[5] // custom
@@ -448,7 +440,7 @@ ${answersCtx}
     setActiveConvId(item.id)
     lastPromptRef.current = item.prompt || ''
     setTimeout(() => {
-      appendMsg('bot', `📂 Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
+      appendMsg('bot', `Riwayat: <strong>${item.label}</strong> — ${item.ts}`)
       const div = document.createElement('div')
       div.className = 'msg bot'
       div.innerHTML = `
@@ -458,8 +450,8 @@ ${answersCtx}
           <div class="pr-text">${item.prompt || '-'}</div>
         </div>
         <div class="yn-row">
-          <button class="yn-btn yes" id="hn">🎨 Prompt baru</button>
-          <button class="yn-btn" id="hr">✎ Refine ini</button>
+          <button class="yn-btn yes" id="hn">Prompt baru</button>
+          <button class="yn-btn" id="hr">Refine ini</button>
         </div>`
       div.querySelector('#hc')?.addEventListener('click', () => navigator.clipboard.writeText(item.prompt || '').then(() => showToast('✓ Di-copy!')))
       div.querySelector('#hn')?.addEventListener('click', () => renderWelcome())

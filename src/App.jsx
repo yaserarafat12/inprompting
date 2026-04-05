@@ -119,31 +119,48 @@ function App() {
     }
   }
 
-  const convHistory = activeMode === 'text' ? textHistory : activeMode === 'image' ? imageHistory : videoHistory
+  const saveHistoryToSupabase = async (item) => {
+    if (!user) return
+    console.log('Saving history to Supabase:', item)
+    const { data, error } = await supabase.from('prompt_history').insert({
+      user_id: user.id,
+      mode: item.mode || activeMode,
+      label: item.label,
+      prompt: item.prompt,
+      negative_prompt: item.negative_prompt || null,
+      icon: item.icon
+    })
+    if (error) console.error('Supabase Save Error:', error)
+    else console.log('Successfully saved to Supabase.')
+  }
 
   const textChat = useChat({
     chatInnerRef: textInnerRef, chatAreaRef: textAreaRef,
     inputRef, toastRef,
     setConvHistory: setTextHistory, setActiveConvId,
     mode: 'text',
-    user
+    user,
+    saveHistoryToSupabase
   })
 
   const imageChat = useImageChat({
     chatInnerRef: imageInnerRef, chatAreaRef: imageAreaRef,
     inputRef, toastRef,
     setConvHistory: setImageHistory, setActiveConvId,
-    user
+    user,
+    saveHistoryToSupabase
   })
 
   const videoChat = useVideoChat({
     chatInnerRef: videoInnerRef, chatAreaRef: videoAreaRef,
     inputRef, toastRef,
     setConvHistory: setVideoHistory, setActiveConvId,
-    user
+    user,
+    saveHistoryToSupabase
   })
 
   const activeChat = activeMode === 'text' ? textChat : activeMode === 'image' ? imageChat : videoChat
+  const convHistory = activeMode === 'text' ? textHistory : activeMode === 'image' ? imageHistory : videoHistory
 
   // init both modes
   useEffect(() => {
@@ -181,15 +198,15 @@ function App() {
       const div = document.createElement('div')
       div.className = 'msg bot'
       div.innerHTML = `
-        <div class="bubble">Template <strong>${t.name}</strong> dimuat ✦</div>
+        <div class="bubble">Template <strong>${t.name}</strong> dimuat</div>
         <div class="prompt-result">
-          <div class="pr-label">✦ TEMPLATE PROMPT</div>
-          <button class="pr-copy" id="tc">Copy ⌘</button>
+          <div class="pr-label">TEMPLATE PROMPT</div>
+          <button class="pr-copy" id="tc">Copy</button>
           <div class="pr-text">${t.prompt}</div>
         </div>
         <div class="yn-row">
-          <button class="yn-btn yes" id="tn">✦ Prompt baru</button>
-          <button class="yn-btn" id="tr">✎ Customize</button>
+          <button class="yn-btn yes" id="tn">Prompt baru</button>
+          <button class="yn-btn" id="tr">Customize</button>
         </div>`
       div.querySelector('#tc')?.addEventListener('click', () =>
         navigator.clipboard.writeText(t.prompt).then(() => textChat.showToast('✓ Template di-copy!'))
@@ -204,16 +221,26 @@ function App() {
 
   return (
     <>
+      {sidebarCollapsed && (
+        <button
+          className="sidebar-open-btn"
+          onClick={() => setSidebarCollapsed(false)}
+          title="Buka sidebar"
+        >
+          ☰
+        </button>
+      )}
+
       {/* ── SIDEBAR ── */}
       <div className={`sidebar${sidebarCollapsed ? ' collapsed' : ''}`}>
         <div className="sidebar-top">
           <div className="logo">In<span>prompting</span></div>
-          <button className="icon-btn-sm" onClick={() => setSidebarCollapsed(c => !c)}>☰</button>
+          <button className="icon-btn-sm" onClick={() => setSidebarCollapsed(c => !c)}>Menu</button>
         </div>
 
         <div className="sb-section">
           <button className="sb-item new-chat" onClick={() => { setView('chat'); activeChat.renderWelcome() }}>
-            <span className="sb-icon">✦</span><span className="sb-label">New Chat</span>
+            <span className="sb-label">New Chat</span>
           </button>
         </div>
 
@@ -223,19 +250,19 @@ function App() {
             className={`sb-item${activeMode === 'text' && view !== 'templates' ? ' active' : ''}`}
             onClick={() => { switchMode('text'); setView('chat') }}
           >
-            <span className="sb-icon">✦</span><span className="sb-label">Text Prompting</span>
+            <span className="sb-label">Text Prompting</span>
           </button>
           <button
             className={`sb-item${activeMode === 'image' && view !== 'templates' ? ' active' : ''}`}
             onClick={() => { switchMode('image'); setView('chat') }}
           >
-            <span className="sb-icon">🖼</span><span className="sb-label">Image Prompting</span>
+            <span className="sb-label">Image Prompting</span>
           </button>
           <button
             className={`sb-item${activeMode === 'video' && view !== 'templates' ? ' active' : ''}`}
             onClick={() => { switchMode('video'); setView('chat') }}
           >
-            <span className="sb-icon">🎬</span><span className="sb-label">Video Prompting</span>
+            <span className="sb-label">Video Prompting</span>
           </button>
         </div>
 
@@ -245,18 +272,18 @@ function App() {
             className={`sb-item${view === 'templates' ? ' active' : ''}`}
             onClick={() => setView('templates')}
           >
-            <span className="sb-icon">📚</span><span className="sb-label">Templates & Skills</span>
+            <span className="sb-label">Templates & Skills</span>
           </button>
         </div>
 
         <div className="sb-section" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <div className="sb-section-label">RIWAYAT {activeMode === 'image' ? '🎨' : activeMode === 'video' ? '🎬' : ''}</div>
+          <div className="sb-section-label">RIWAYAT</div>
           <div className="conv-scroll">
             {convHistory.length === 0
               ? <div className="conv-empty">Belum ada riwayat</div>
               : convHistory.map(item => (
                   <div
-                    key={item.id}
+                    key={item.id || item.ts}
                     className={`conv-item${activeConvId === item.id ? ' active' : ''}`}
                     onClick={() => { setView('chat'); activeChat.loadHistory(item) }}
                   >
@@ -281,7 +308,7 @@ function App() {
             </div>
           ) : (
             <button className="sb-item login-trigger" onClick={() => setShowAuth(true)}>
-              <span className="sb-icon">👤</span><span className="sb-label">Login / Daftar ✦</span>
+              <span className="sb-label">Login / Daftar</span>
             </button>
           )}
         </div>
@@ -292,7 +319,7 @@ function App() {
         {view === 'templates' ? (
           <>
             <div className="chat-header">
-              <div className="chat-title">📚 TEMPLATES & SKILLS</div>
+              <div className="chat-title">TEMPLATES & SKILLS</div>
               <button className="yn-btn" onClick={() => setView('chat')} style={{ fontSize: '11px', padding: '5px 14px' }}>← Kembali</button>
             </div>
             <div className="templates-page">
@@ -316,8 +343,8 @@ function App() {
                     <div className="tpl-desc">{t.desc}</div>
                     <div className="tpl-preview">{t.prompt.slice(0, 110)}...</div>
                     <div className="tpl-actions">
-                      <button className="tpl-copy-btn" onClick={() => { navigator.clipboard.writeText(t.prompt); textChat.showToast('✓ Di-copy!') }}>Copy ⌘</button>
-                      <button className="tpl-use-btn" onClick={() => handleTemplateUse(t)}>Pakai & Customize →</button>
+                      <button className="tpl-copy-btn" onClick={() => { navigator.clipboard.writeText(t.prompt); textChat.showToast('✓ Di-copy!') }}>Copy</button>
+                      <button className="tpl-use-btn" onClick={() => handleTemplateUse(t)}>Pakai →</button>
                     </div>
                   </div>
                 ))}
@@ -334,15 +361,15 @@ function App() {
                 <button
                   className={`mode-pill${activeMode === 'text' ? ' active' : ''}`}
                   onClick={() => switchMode('text')}
-                >✦ Text</button>
+                >Text</button>
                 <button
                   className={`mode-pill${activeMode === 'image' ? ' active' : ''}`}
                   onClick={() => switchMode('image')}
-                >🖼 Image</button>
+                >Image</button>
                 <button
                   className={`mode-pill${activeMode === 'video' ? ' active' : ''}`}
                   onClick={() => switchMode('video')}
-                >🎬 Video</button>
+                >Video</button>
               </div>
             </div>
 

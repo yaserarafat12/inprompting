@@ -27,7 +27,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
           },
         })
         if (error) throw error
-        alert('Cek email lu buat verifikasi pendaftaran! ✦')
+        alert('Cek email lu buat verifikasi pendaftaran!')
       }
       onAuthSuccess?.()
       onClose()
@@ -66,7 +66,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
 
         <div className="auth-content">
           <div className="auth-header">
-            <div className="auth-title">{isLogin ? 'Selamat Datang Kembali ✦' : 'Gabung ke Inprompting ✦'}</div>
+            <div className="auth-title">{isLogin ? 'Selamat Datang Kembali' : 'Gabung ke Inprompting'}</div>
             <div className="auth-sub">{isLogin ? 'Masuk buat akses riwayat prompt lu' : 'Daftar buat simpan prompt lu selamanya'}</div>
           </div>
 
@@ -98,7 +98,7 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
               {loading ? (
                 <div className="dots"><span></span><span></span><span></span></div>
               ) : (
-                isLogin ? 'Masuk Sekarang →' : 'Buat Akun Baru →'
+                isLogin ? 'Masuk Sekarang' : 'Buat Akun Baru'
               )}
             </button>
           </form>
